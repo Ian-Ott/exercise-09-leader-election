@@ -3,3 +3,74 @@
 # - NODE_ID env var (1, 2, 3)
 # - Different port mapping (8081, 8082, 8083)
 # - PEERS env var listing other nodes (e.g., "http://node-2:8080,http://node-3:8080")
+services:
+  db:
+    image: postgres:16
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build: .
+
+    command: python -m src.init_db
+
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+  node-1:
+    build: .
+
+    ports:
+      - "8081:8080"
+
+    environment:
+      NODE_ID: 1
+      PEERS: "http://node-2:8080,http://node-3:8080"
+      DATABASE_URL: ${DATABASE_URL}
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  node-2:
+    build: .
+
+    ports:
+      - "8082:8080"
+
+    environment:
+      NODE_ID: 2
+      PEERS: "http://node-1:8080,http://node-3:8080"
+      DATABASE_URL: ${DATABASE_URL}
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  node-3:
+    build: .
+
+    ports:
+      - "8083:8080"
+
+    environment:
+      NODE_ID: 3
+      PEERS: "http://node-1:8080,http://node-2:8080"
+      DATABASE_URL: ${DATABASE_URL}
+
+    depends_on:
+      migrate:
+        condition: service_completed_successfully

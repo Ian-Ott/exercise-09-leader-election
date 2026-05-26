@@ -5,9 +5,19 @@ from sqlalchemy.orm import Session
 from src.database import Base, engine, get_db
 from src.models import Node
 from src.schemas import NodeCreate, NodeResponse, NodeUpdate
+import os
+from contextlib import asynccontextmanager
+import src.election as election
+from threading import Thread
 
-Base.metadata.create_all(bind=engine)
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    Thread(target=election.heartbeat_check, daemon=True).start()
+
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
@@ -64,3 +74,18 @@ def delete_node(name: str, db: Session = Depends(get_db)):
     node.updated_at = datetime.now(timezone.utc)
     db.commit()
     return Response(status_code=204)
+
+@app.post("/election")
+def receive_election(data: dict):
+    return election.handle_election_message(data["sender_id"])
+
+
+@app.post("/coordinator")
+def coordinator(data: dict):
+    election.set_leader(data["leader_id"])
+    return {"status": "ack"}
+
+
+@app.get("/leader")
+def leader():
+    return {"leader_id": election.leader_id}
